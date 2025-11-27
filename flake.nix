@@ -1,66 +1,68 @@
 {
-  description = "Demo de actualizaciones remotas con NixOS";
+  description = "Demo de actualizaciones remotas con NixOS (CONABIO)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
   };
 
   outputs = { self, nixpkgs }:
-  let
-    system = "x86_64-linux";
-    pkgs = import nixpkgs { inherit system; };
-    app = pkgs.callPackage ./app { };
-  in {
- nixosConfigurations.client = nixpkgs.lib.nixosSystem {
-      inherit system;
+    let
+      # 1. Definimos variables globales
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+      
+      # Importamos tu aplicación python
+      app = pkgs.callPackage ./app { };
+    in
+    {
+      nixosConfigurations.client = nixpkgs.lib.nixosSystem {
+        # AQUI va el sistema (fuera de modules)
+        inherit system;
 
-      modules = [
-        # Aquí empieza tu módulo
-        ({ config, lib, pkgs, ... }: {
-          
-          system.stateVersion = "24.05";
-
-          # 1. PARTE DE DEFINICIÓN (El "Formulario")
-          # Aquí le dices a NixOS: "Existe una opción llamada services.demo-app"
-          options.services.demo-app = {
-            enable = lib.mkEnableOption "el servicio demo de CONABIO";
+        modules = [
+          # Tu configuración del sistema
+          ({ config, lib, pkgs, ... }: {
             
-            package = lib.mkOption {
-              type = lib.types.package;
-              default = app;
-              description = "El paquete que se va a ejecutar";
-            };
-          };
+            # Versión del estado (obligatorio)
+            system.stateVersion = "24.05";
 
-          # 2. PARTE DE CONFIGURACIÓN (Rellenar el formulario)
-          # Aquí activamos lo que acabamos de definir arriba
-          config = {
-            # Activamos nuestro propio servicio
-            services.demo-app = {
-              enable = true;
-              package = app;
-            };
-
-            # Instalamos el paquete en el sistema (opcional, para verlo en consola)
-            environment.systemPackages = [ app ];
-
-            # 3. PARTE DE IMPLEMENTACIÓN (Los cables por detrás)
-            # Esto solo se crea SI services.demo-app.enable es true
-            systemd.services.demo-app = lib.mkIf config.services.demo-app.enable {
-              description = "Servicio Demo CONABIO";
-              wantedBy = [ "multi-user.target" ];
-              
-              script = ''
-                ${config.services.demo-app.package}/bin/demo-app
-              '';
-              
-              serviceConfig = {
-                Restart = "always";
+            # --- DEFINICIÓN DEL SERVICIO (OPTIONS) ---
+            options.services.demo-app = {
+              enable = lib.mkEnableOption "el servicio demo de CONABIO";
+              package = lib.mkOption {
+                type = lib.types.package;
+                default = app;
+                description = "El paquete que se va a ejecutar";
               };
             };
-          };
-        })
-      ];
-    }; 
-  };
+
+            # --- CONFIGURACIÓN DEL SERVICIO (CONFIG) ---
+            config = lib.mkIf config.services.demo-app.enable {
+              # Instalamos el paquete para poder verlo en consola
+              environment.systemPackages = [ config.services.demo-app.package ];
+
+              # Creamos el servicio de systemd
+              systemd.services.demo-app = {
+                description = "Servicio Demo CONABIO";
+                wantedBy = [ "multi-user.target" ];
+                serviceConfig = {
+                  # Ejecuta el binario dentro del paquete
+                  ExecStart = "${config.services.demo-app.package}/bin/demo-app";
+                  Restart = "always";
+                };
+              };
+            };
+          })
+
+          # Módulo extra para activarlo
+          ({ ... }: {
+            services.demo-app.enable = true;
+          })
+          
+          # Importamos configuración de hardware y general
+          ./hardware-configuration.nix
+          ./configuration.nix
+        ];
+      };
+    };
 }
